@@ -1,133 +1,158 @@
-# 파일 실행: python -m streamlit run app.py
 import streamlit as st
 import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
-from sympy.integrals.manualintegrate import integral_steps
-from datetime import datetime
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+)
 
-# 1. 페이지 설정 및 세션 초기화
-st.set_page_config(page_title="AI 적분 분석기 PRO", layout="wide")
+# 1. 페이지 설정
+st.set_page_config(page_title="Pro Function Analyzer", layout="wide")
 
-if 'formula' not in st.session_state:
-    st.session_state.formula = "x**2 + cos(x)"
-if 'history' not in st.session_state:
-    st.session_state.history = []
+# 2. 다크 테마 전용 설정
+bg_color = "#0D1117"
+card_bg = "linear-gradient(145deg, #1e222d, #14171c)"
+text_color = "#FFFFFF"
+sub_text = "#8B949E"
+input_bg = "#090C10"
+btn_shadow = "5px 5px 10px #05070a, -2px -2px 10px #1d232d"
+accent_blue = "#58A6FF"
 
-def set_formula(new_f):
-    st.session_state.formula = new_f
-
-# 2. 사이드바 구성
-st.sidebar.header("🎨 테마 및 공식")
-theme_choice = st.sidebar.radio("그래프 모드", ["Dark Mode", "Light Mode"])
-
-# 자주 쓰는 공식 버튼
-st.sidebar.subheader("📚 공식 프리셋")
-cols = st.sidebar.columns(2)
-with cols[0]:
-    if st.button("다항함수"): set_formula("x**3 - 2*x")
-    if st.button("지수함수"): set_formula("exp(x)")
-with cols[1]:
-    if st.button("삼각함수"): set_formula("sin(x)")
-    if st.button("복합함수"): set_formula("x * cos(x)")
-
-st.sidebar.divider()
-st.sidebar.header("⚙️ 계산 설정")
-expr_input = st.sidebar.text_input("수식 입력 (Python 문법)", value=st.session_state.formula)
-st.session_state.formula = expr_input
-
-range_a = st.sidebar.number_input("구간 시작점 (a)", value=0.0)
-range_b = st.sidebar.number_input("구간 끝점 (b)", value=2.0)
-
-# 3. 메인 화면 로직
-st.title("🌓 AI 적분 분석 및 시각화 대시보드")
-
-try:
-    x = sp.Symbol('x')
-    expr = sp.sympify(st.session_state.formula)
+# --- CSS 스타일 (다크 모드 고정) ---
+st.markdown(f"""
+<style>
+    .main {{ background-color: {bg_color}; font-family: 'Inter', sans-serif; }}
     
-    # [A] 실시간 프리뷰
-    st.subheader("👀 수식 프리뷰")
-    st.latex(rf"f(x) = {sp.latex(expr)}")
-    st.divider()
+    /* 텍스트 및 수식 스타일 */
+    h1, h2, h3, label, p, .stMarkdown {{ color: {text_color} !important; }}
+    .stLatex {{ color: {text_color} !important; font-size: 1.2em; }}
 
-    # [B] 계산 수행
-    indefinite = sp.integrate(expr, x)
-    definite = sp.integrate(expr, (x, range_a, range_b))
-    definite_numeric = float(definite.evalf())
-
-    # [C] 레이아웃 배치
-    col1, col2 = st.columns([1, 1.2])
-
-    with col1:
-        st.subheader("📝 계산 리포트")
-        st.write("**부정적분 해:**")
-        st.latex(rf"\int f(x) \, dx = {sp.latex(indefinite)} + C")
-        
-        st.write("**정적분 계산:**")
-        st.latex(rf"\int_{{{range_a}}}^{{{range_b}}} f(x) \, dx = {definite_numeric:.4f}")
-        st.metric("최종 수치 결과", f"{definite_numeric:.6f}")
-        
-        with st.expander("🔍 상세 풀이 단계 (Step-by-Step)"):
-            try:
-                steps = integral_steps(expr, x)
-                st.code(steps)
-            except:
-                st.write("상세 단계 분석이 어려운 수식입니다.")
-
-    with col2:
-        st.subheader("📊 시각화 분석")
-        
-        # 테마 설정
-        if theme_choice == "Dark Mode":
-            plt.style.use('dark_background')
-            bg_color = "#0E1117"
-            text_color = "white"
-        else:
-            plt.style.use('default')
-            bg_color = "white"
-            text_color = "black"
-
-        fig, ax = plt.subplots(figsize=(8, 5))
-        fig.patch.set_facecolor(bg_color)
-        ax.set_facecolor(bg_color)
-
-        # 데이터 생성
-        f_num = sp.lambdify(x, expr, 'numpy')
-        x_plot = np.linspace(range_a - 1, range_b + 1, 400)
-        y_plot = f_num(x_plot)
-        
-        ax.plot(x_plot, y_plot, color='#FF4B4B', lw=2.5, label='$f(x)$')
-        ix = np.linspace(range_a, range_b, 100)
-        ax.fill_between(ix, f_num(ix), color='#1C83E1', alpha=0.4, label='Area')
-        
-        ax.axhline(0, color=text_color, lw=1, alpha=0.3)
-        ax.grid(True, linestyle='--', alpha=0.2)
-        ax.legend(labelcolor=text_color)
-        st.pyplot(fig)
-
-    # [D] 히스토리 저장 및 관리
-    st.divider()
-    st.subheader("💾 계산 히스토리")
+    /* 뉴모피즘 버튼 디자인 */
+    .stButton > button {{
+        width: 100% !important; height: 3.8em !important; border-radius: 16px !important;
+        font-weight: 600 !important; color: {text_color} !important;
+        background: {card_bg} !important; border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        box-shadow: {btn_shadow} !important; transition: all 0.2s ease; margin-bottom: 8px;
+    }}
     
-    if st.button("현재 결과 기록하기"):
-        new_record = {
-            "시간": datetime.now().strftime("%H:%M:%S"),
-            "수식": st.session_state.formula,
-            "구간": f"[{range_a}, {range_b}]",
-            "결과": round(definite_numeric, 6)
-        }
-        st.session_state.history.append(new_record)
+    .stButton > button:hover {{ 
+        transform: translateY(-3px); 
+        filter: brightness(1.2);
+        border: 1px solid {accent_blue}55 !important;
+    }}
 
-    if st.session_state.history:
-        history_df = pd.DataFrame(st.session_state.history)
-        st.table(history_df)
-        
-        # CSV 다운로드
-        csv = history_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📊 전체 기록 다운로드 (CSV)", csv, "integral_history.csv", "text/csv")
+    /* 버튼 타입별 포인트 컬러 */
+    div[data-testid*="btn_op"] button {{ background: linear-gradient(145deg, #FF9F0A, #F78300) !important; color: #000 !important; border:none !important; }}
+    div[data-testid*="btn_func"] button {{ background: linear-gradient(145deg, #007AFF, #0051FF) !important; color: #fff !important; border:none !important; }}
+    div[data-testid*="btn_danger"] button {{ background: linear-gradient(145deg, #FF453A, #D70015) !important; color: #fff !important; border:none !important; }}
 
-except Exception as e:
-    st.error(f"⚠️ 입력 오류: {e}")
-    st.info("Tip: 곱셈은 `*`, 거듭제곱은 `**` 기호를 사용하세요.")
+    /* 입력창 스타일 */
+    div[data-baseweb="input"] {{
+        background-color: {input_bg} !important;
+        border: 1px solid #30363D !important;
+        border-radius: 14px !important;
+        padding: 5px !important;
+    }}
+    input {{ color: {accent_blue} !important; font-size: 1.5rem !important; font-weight: 600 !important; }}
+</style>
+""", unsafe_allow_html=True)
+
+# 3. 로직 및 세션 관리
+if "formula" not in st.session_state: st.session_state["formula"] = "x^2"
+def insert_char(char): st.session_state["formula"] += str(char)
+def clear_all(): st.session_state["formula"] = ""
+def delete_last(): st.session_state["formula"] = st.session_state["formula"][:-1]
+
+def convert_to_inverse():
+    try:
+        x, y = sp.symbols("x y")
+        raw = st.session_state["formula"].replace("^", "**").replace("×", "*").replace("÷", "/")
+        expr = parse_expr(raw, transformations=(standard_transformations + (implicit_multiplication_application,)))
+        sol = sp.solve(sp.Eq(expr, y), x)
+        if sol: st.session_state["formula"] = str(sol[0].subs(y, x)).replace("**", "^").replace(" ", "")
+    except: st.toast("역함수 계산 불가")
+
+# 4. UI 구성
+st.title("📟 스마트 함수 분석기 PRO")
+
+# 메인 입력창
+st.text_input("수식 입력", key="formula")
+
+pad_col, result_col = st.columns([1.3, 1.5], gap="large")
+
+with pad_col:
+    st.subheader("⌨️ 계산 패드")
+    btn_layout = [
+        [("x²", "^2", "op"), ("xⁿ", "^", "op"), ("√", "sqrt(", "func"), ("DEL", "del", "danger"), ("AC", "ac", "danger")],
+        [("sin", "sin(", "func"), ("cos", "cos(", "func"), ("tan", "tan(", "func"), ("exp", "exp(", "func"), ("ln", "log(", "func")],
+        [("7", "7", "num"), ("8", "8", "num"), ("9", "9", "num"), ("\\+", "+", "op"), ("\\-", "-", "op")],
+        [("4", "4", "num"), ("5", "5", "num"), ("6", "6", "num"), ("×", "*", "op"), ("÷", "/", "op")],
+        [("1", "1", "num"), ("2", "2", "num"), ("3", "3", "num"), ("(", "(", "num"), (")", ")", "num")],
+        [("0", "0", "num"), (".", ".", "num"), ("x", "x", "op"), ("π", "pi", "num"), ("f⁻¹(x)", "inv", "danger")],
+    ]
+    for row in btn_layout:
+        cols = st.columns(5)
+        for i, (label, val, t_key) in enumerate(row):
+            with cols[i]:
+                k = f"btn_{t_key}_{label}_{i}"
+                if val == "del": st.button(label, on_click=delete_last, key=k)
+                elif val == "ac": st.button(label, on_click=clear_all, key=k)
+                elif val == "inv": st.button(label, on_click=convert_to_inverse, key=k)
+                else: st.button(label, on_click=insert_char, args=(val,), key=k)
+
+with result_col:
+    st.subheader("📊 분석 리포트")
+    if st.session_state["formula"]:
+        try:
+            clean = st.session_state["formula"].replace("^", "**").replace("×", "*").replace("÷", "/").replace("π", "pi")
+            x = sp.Symbol("x")
+            expr = parse_expr(clean, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            
+            # 1. LaTeX 메인 출력
+            st.markdown(f"<div style='border-left: 4px solid {accent_blue}; padding-left: 15px;'><p style='color:{sub_text}; margin:0;'>주어진 함수</p></div>", unsafe_allow_html=True)
+            st.latex(rf"f(x) = {sp.latex(expr)}")
+            
+            st.divider()
+
+            # 2. 미분/적분 결과
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("**📝 도함수**")
+                st.latex(rf"f'(x) = {sp.latex(sp.diff(expr, x))}")
+            with c2:
+                st.write("**📝 부정적분**")
+                st.latex(rf"\int f(x)dx = {sp.latex(sp.simplify(sp.integrate(expr, x)))} + C")
+
+            # 3. 정적분 계산
+            st.write("**🎯 구간 정적분**")
+            ic1, ic2, ic3 = st.columns([1, 1, 1.2])
+            with ic1: a = st.number_input("시작(a)", value=0.0)
+            with ic2: b = st.number_input("끝(b)", value=1.0)
+            with ic3: 
+                res = sp.integrate(expr, (x, a, b))
+                st.metric("Area Value", f"{float(res):.4f}")
+            
+            # 4. 그래프 시각화 (다크 모드 최적화)
+            fig, ax = plt.subplots(figsize=(6, 3.2))
+            fig.patch.set_facecolor(bg_color)
+            ax.set_facecolor("#161B22")
+            
+            xr = np.linspace(a-3, b+3, 500); f_np = sp.lambdify(x, expr, "numpy")
+            yr = f_np(xr)
+            if isinstance(yr, (int, float)): yr = np.full_like(xr, yr)
+            
+            ax.plot(xr, yr, color=accent_blue, lw=2.5, zorder=3)
+            ax.fill_between(xr, yr, where=((xr>=a)&(xr<=b)), color=accent_blue, alpha=0.25, zorder=2)
+            
+            # 축 및 그리드 설정
+            ax.axhline(0, color="#484F58", lw=1)
+            ax.axvline(0, color="#484F58", lw=1)
+            ax.grid(True, linestyle=":", alpha=0.3, color="#8B949E")
+            ax.tick_params(colors=sub_text, labelsize=8)
+            for spine in ax.spines.values(): spine.set_edgecolor("#30363D")
+            
+            st.pyplot(fig)
+
+        except: st.info("수식을 입력하고 버튼을 눌러보세요.")
