@@ -1,5 +1,4 @@
 @echo off
-title Smart Equation Analyzer Master Launcher
 echo [1/2] Verifying installation of required libraries and graph engines...
 python -m pip install streamlit sympy numpy matplotlib
 
